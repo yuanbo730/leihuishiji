@@ -9,4 +9,8 @@ public class RedisConstans {
     public static final String LOGIN_TOKEN_KEY = "login:token:";
     public static final long LOGIN_TOKEN_EXPIRE = 30L;
 
+    public static final String CACHE_SHOP_KEY = "cache:shop:";
+
+    public static final String CACHE_SHOP_TYPE_KEY = "cache:shop:type:list";
+    public static final long CACHE_SHOP_TYPE_TTL = 30L;
 }
