@@ -1,5 +1,7 @@
 package com.hmdp.service.impl;
 
+import cn.hutool.core.bean.BeanUtil;
+import cn.hutool.core.util.BooleanUtil;
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSON;
 import cn.hutool.json.JSONUtil;
@@ -33,26 +35,86 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
 
     @Override
     public Result queryById(Long id) {
+        // 缓存穿透
+        //Shop shop = querywithPassThrough(id);
+        // 缓存击穿
+        Shop shop = querywithHit(id);
+        if (shop == null){
+            return Result.fail("店铺不存在");
+        }
+        return Result.ok(shop);
+    }
+    //缓存穿透代码封装
+    public Shop querywithPassThrough(Long id){
         String key = RedisConstans.CACHE_SHOP_KEY + id;
         String shopJson = stringRedisTemplate.opsForValue().get(key);
-        if(StrUtil.isNotBlank(shopJson)){
+        if (StrUtil.isNotBlank(shopJson)){
             Shop shop = JSONUtil.toBean(shopJson, Shop.class);
-            return Result.ok(shop);
+            return shop;
         }
         if(shopJson != null){
-                return Result.fail("店铺不存在");
+                return null;
         }
-
+        // 缓存中也没有
         Shop shop = getById(id);
-       if(shop == null){
-            // 缓存中也没有，数据库中也没有
-           stringRedisTemplate.opsForValue().set(key, "", 30L, TimeUnit.MINUTES);
-           return Result.fail("店铺不存在");
-       }
-
-       // 数据库有，写入缓存
+        if(shop == null){
+            stringRedisTemplate.opsForValue().set(key, "", 30L, TimeUnit.MINUTES);
+            return shop;
+        }
+        // 数据库有，写入缓存
         stringRedisTemplate.opsForValue().set(key, JSONUtil.toJsonStr(shop), 30L, TimeUnit.MINUTES);
-        return Result.ok(shop);
+        return shop;
+    }
+
+    //缓存击穿代码封装
+    public Shop querywithHit(Long id){
+        String key = RedisConstans.CACHE_SHOP_KEY + id;
+        String shopJson = stringRedisTemplate.opsForValue().get(key);
+        if (StrUtil.isNotBlank(shopJson)){
+            Shop shop = JSONUtil.toBean(shopJson, Shop.class);
+            return shop;
+        }
+        if(shopJson != null){
+            return null;
+        }
+        // 试锁，获取数据库数据
+        String lockkey = "_ock:shop"+id;
+        Shop shop = null;
+        try {
+            boolean isLock = tryLock(lockkey);
+            if(!isLock){
+
+                    Thread.sleep(1000);
+                    return querywithHit(id);
+
+
+            }
+
+
+            shop = getById(id);
+            Thread.sleep(200);
+            if(shop == null){
+                stringRedisTemplate.opsForValue().set(key, "", 30L, TimeUnit.MINUTES);
+                return shop;
+            }
+            // 数据库有，写入缓存
+            stringRedisTemplate.opsForValue().set(key, JSONUtil.toJsonStr(shop), 30L, TimeUnit.MINUTES);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }finally{
+            // 释放锁
+            releaseLock(lockkey);
+        }
+        // 返回数据
+        return shop;
+    }
+
+    private boolean tryLock(String key){
+        Boolean flag = stringRedisTemplate.opsForValue().setIfAbsent(key, "lock", 30L, TimeUnit.MINUTES);
+        return BooleanUtil.isTrue(flag);
+    }
+    private void releaseLock(String key){
+        stringRedisTemplate.delete(key);
     }
 
     @Override
