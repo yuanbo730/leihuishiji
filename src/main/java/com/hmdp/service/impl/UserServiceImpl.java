@@ -90,10 +90,10 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
                         .setIgnoreNullValue(true)
                         .setFieldValueEditor((fieldName,fieldValue)->fieldValue.toString()));
 
-        stringRedisTemplate.opsForHash().putAll("login:token"+token, userMap);
+        stringRedisTemplate.opsForHash().putAll(RedisConstans.LOGIN_TOKEN_KEY + token, userMap);
 
         //设置有效期
-        String tokenkey = "login:token"+token;
+        String tokenkey = RedisConstans.LOGIN_TOKEN_KEY + token;
         stringRedisTemplate.expire(tokenkey, RedisConstans.LOGIN_TOKEN_EXPIRE, TimeUnit.MINUTES);
         return Result.ok(token);
 
